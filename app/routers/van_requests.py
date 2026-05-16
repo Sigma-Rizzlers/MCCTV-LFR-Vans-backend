@@ -10,6 +10,7 @@ from app.models.van_request_participant import VanRequestParticipant
 from app.schemas.participant import VanRequestParticipantIn, VanRequestParticipantOut
 from app.schemas.stop import StopIn, StopOut
 from app.schemas.van_request import ApproveIn, VanRequestIn, VanRequestOut
+from app.utils.audit import log_action
 
 router = APIRouter(prefix="/v1/van-requests", tags=["van-requests"])
 
@@ -184,6 +185,7 @@ async def approve_van_request(
         obj.approvedBy = None
         obj.approvedAt = None
     obj.approvalNote = body.note or ""
+    await log_action(db, current_user, action=body.action, target=obj.requestId, detail=body.note or "")
     await db.commit()
     await db.refresh(obj)
     return VanRequestOut.model_validate(obj)

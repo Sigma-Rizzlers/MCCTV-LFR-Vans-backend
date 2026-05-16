@@ -5,6 +5,7 @@ from app.dependencies import CurrentUserDep, DBDep, RequireSuperadminDep
 from app.models.user import User
 from app.schemas.user import ResetPasswordIn, UserCreateIn, UserOut, UserUpdateIn
 from app.security import hash_password
+from app.utils.audit import log_action
 
 router = APIRouter(prefix="/v1/users", tags=["users"])
 
@@ -37,7 +38,7 @@ async def get_user(user_id: int, db: DBDep, current_user: CurrentUserDep):
 
 
 @router.post("/", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-async def create_user(body: UserCreateIn, db: DBDep, _: RequireSuperadminDep):
+async def create_user(body: UserCreateIn, db: DBDep, current_user: RequireSuperadminDep):
     exists = await db.execute(select(User).where(User.username == body.username))
     if exists.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already exists")
@@ -48,6 +49,7 @@ async def create_user(body: UserCreateIn, db: DBDep, _: RequireSuperadminDep):
         unitName=body.unitName,
     )
     db.add(user)
+    await log_action(db, current_user, "create_user", target=body.username)
     await db.commit()
     await db.refresh(user)
     return user
@@ -88,12 +90,13 @@ async def patch_user(user_id: int, body: UserUpdateIn, db: DBDep, _: RequireSupe
 
 
 @router.post("/{user_id}/reset-password/")
-async def reset_password(user_id: int, body: ResetPasswordIn, db: DBDep, _: RequireSuperadminDep):
+async def reset_password(user_id: int, body: ResetPasswordIn, db: DBDep, current_user: RequireSuperadminDep):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     user.passwordHash = hash_password(body.newPassword)
+    await log_action(db, current_user, "reset_password", target=user.username)
     await db.commit()
     return {"detail": "Password updated"}
 
@@ -110,4 +113,5 @@ async def delete_user(user_id: int, db: DBDep, current_user: RequireSuperadminDe
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     user.isActive = False
+    await log_action(db, current_user, "delete_user", target=user.username)
     await db.commit()

@@ -12,7 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
 from app.database import engine
-from app.routers import admin_panel, auth, health, participants, users, van_requests
+from app.routers import admin_panel, audit_log, auth, health, participants, users, van_requests
 
 logger = logging.getLogger("app")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -128,3 +128,4 @@ app.include_router(van_requests.router, prefix="/api")
 app.include_router(participants.router, prefix="/api")
 app.include_router(admin_panel.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
+app.include_router(audit_log.router, prefix="/api")
