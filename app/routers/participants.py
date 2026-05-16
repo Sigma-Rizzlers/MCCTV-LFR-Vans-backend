@@ -12,7 +12,7 @@ async def _get_or_404(participant_id: int, db) -> Participant:
     result = await db.execute(
         select(Participant).where(
             Participant.id == participant_id,
-            Participant.is_deleted.is_(False),
+            Participant.isDeleted.is_(False),
         )
     )
     obj = result.scalar_one_or_none()
@@ -23,14 +23,14 @@ async def _get_or_404(participant_id: int, db) -> Participant:
 
 # list, retrieve, create are public — no auth required (autocomplete + form submission)
 
-@router.get("/", response_model=list[ParticipantOut], response_model_by_alias=True)
+@router.get("/", response_model=list[ParticipantOut])
 async def list_participants(
     db: DBDep,
     _: RequireAnyDep,
     search: str | None = Query(None),
     ordering: str | None = Query(None),
 ):
-    q = select(Participant).where(Participant.is_deleted.is_(False))
+    q = select(Participant).where(Participant.isDeleted.is_(False))
 
     if search:
         term = f"%{search}%"
@@ -45,7 +45,7 @@ async def list_participants(
     col_name = ordering.lstrip("-") if ordering else "name"
     col_map = {
         "name": Participant.name,
-        "created_at": Participant.created_at,
+        "createdAt": Participant.createdAt,
     }
     col = col_map.get(col_name, Participant.name)
     q = q.order_by(col.desc() if desc else col.asc())
@@ -54,13 +54,12 @@ async def list_participants(
     return [ParticipantOut.model_validate(r) for r in result.scalars().all()]
 
 
-@router.get("/{participant_id}/", response_model=ParticipantOut, response_model_by_alias=True)
+@router.get("/{participant_id}/", response_model=ParticipantOut)
 async def get_participant(participant_id: int, db: DBDep, _: RequireAnyDep):
     return ParticipantOut.model_validate(await _get_or_404(participant_id, db))
 
 
-@router.post("/", response_model=ParticipantOut, status_code=status.HTTP_201_CREATED,
-             response_model_by_alias=True)
+@router.post("/", response_model=ParticipantOut, status_code=status.HTTP_201_CREATED)
 async def create_participant(body: ParticipantIn, db: DBDep):
     obj = Participant(**body.model_dump())
     db.add(obj)
@@ -71,7 +70,7 @@ async def create_participant(body: ParticipantIn, db: DBDep):
 
 # update and delete require admin
 
-@router.put("/{participant_id}/", response_model=ParticipantOut, response_model_by_alias=True)
+@router.put("/{participant_id}/", response_model=ParticipantOut)
 async def update_participant(participant_id: int, body: ParticipantIn, db: DBDep, _: RequireAdminDep):
     obj = await _get_or_404(participant_id, db)
     for key, value in body.model_dump().items():
@@ -81,7 +80,7 @@ async def update_participant(participant_id: int, body: ParticipantIn, db: DBDep
     return ParticipantOut.model_validate(obj)
 
 
-@router.patch("/{participant_id}/", response_model=ParticipantOut, response_model_by_alias=True)
+@router.patch("/{participant_id}/", response_model=ParticipantOut)
 async def partial_update_participant(participant_id: int, body: ParticipantIn, db: DBDep, _: RequireAdminDep):
     obj = await _get_or_404(participant_id, db)
     for key, value in body.model_dump(exclude_unset=True).items():
@@ -94,5 +93,5 @@ async def partial_update_participant(participant_id: int, body: ParticipantIn, d
 @router.delete("/{participant_id}/", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_participant(participant_id: int, db: DBDep, _: RequireAdminDep):
     obj = await _get_or_404(participant_id, db)
-    obj.is_deleted = True
+    obj.isDeleted = True
     await db.commit()

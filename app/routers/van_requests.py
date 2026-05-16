@@ -16,20 +16,20 @@ router = APIRouter(prefix="/v1/van-requests", tags=["van-requests"])
 # ── ordering helpers ──────────────────────────────────────────────────────────
 
 _ORDER_COLS = {
-    "pickup_date": VanRequest.pickup_date,
-    "created_at": VanRequest.created_at,
-    "status": VanRequest.status,
-    "mission_place": VanRequest.mission_place,
+    "pickupDate": VanRequest.pickupDate,
+    "submittedAt": VanRequest.submittedAt,
+    "approvalStatus": VanRequest.approvalStatus,
+    "missionPlace": VanRequest.missionPlace,
 }
 
 
 def _build_order(ordering: str | None):
     if not ordering:
-        return [VanRequest.created_at.desc()]
+        return [VanRequest.submittedAt.desc()]
     desc = ordering.startswith("-")
     col = _ORDER_COLS.get(ordering.lstrip("-"))
     if not col:
-        return [VanRequest.created_at.desc()]
+        return [VanRequest.submittedAt.desc()]
     return [col.desc() if desc else col.asc()]
 
 
@@ -45,36 +45,36 @@ def _parse_date(value: str | None) -> date | None:
 
 
 def _extract_columns(body: VanRequestIn) -> dict:
-    fd = body.form_data or {}
+    fd = body.formData or {}
     return {
-        "request_id": body.request_id,
-        "submitter_username": body.submitter_username,
-        "form_data": body.form_data,
+        "requestId": body.requestId,
+        "submitterUsername": body.submitterUsername,
+        "formData": body.formData,
         "members": body.members,
         "vehicles": body.vehicles,
-        "equipment_items": body.equipment_items,
-        "admin_panel": body.admin_panel,
-        "support_file_name": body.support_file_name,
-        "lodging_image_name": body.lodging_image_name,
-        "breakfast_image_name": body.breakfast_image_name,
-        "lunch_image_name": body.lunch_image_name,
-        "dinner_image_name": body.dinner_image_name,
-        "implementation_image_name": body.implementation_image_name,
+        "equipmentItems": body.equipmentItems,
+        "adminPanel": body.adminPanel,
+        "supportFileName": body.supportFileName,
+        "lodgingImageName": body.lodgingImageName,
+        "breakfastImageName": body.breakfastImageName,
+        "lunchImageName": body.lunchImageName,
+        "dinnerImageName": body.dinnerImageName,
+        "implementationImageName": body.implementationImageName,
         # first-class searchable columns mirrored from formData
-        "mission_title": fd.get("missionTitle", ""),
-        "mission_place": fd.get("missionPlace", ""),
-        "pickup_date": _parse_date(fd.get("departureDate")),
-        "return_date": _parse_date(fd.get("returnDate")),
+        "missionTitle": fd.get("missionTitle", ""),
+        "missionPlace": fd.get("missionPlace", ""),
+        "pickupDate": _parse_date(fd.get("departureDate")),
+        "returnDate": _parse_date(fd.get("returnDate")),
         "fullname": fd.get("name", ""),
-        "job_position": fd.get("role", ""),
-        "requester_phone": fd.get("phone", ""),
-        "requester_gender": fd.get("gender", ""),
+        "jobPosition": fd.get("role", ""),
+        "requesterPhone": fd.get("phone", ""),
+        "requesterGender": fd.get("gender", ""),
     }
 
 
 async def _get_or_404(request_id: int, db) -> VanRequest:
     result = await db.execute(
-        select(VanRequest).where(VanRequest.id == request_id, VanRequest.is_deleted.is_(False))
+        select(VanRequest).where(VanRequest.id == request_id, VanRequest.isDeleted.is_(False))
     )
     obj = result.scalar_one_or_none()
     if not obj:
@@ -85,7 +85,7 @@ async def _get_or_404(request_id: int, db) -> VanRequest:
 # ── van request CRUD ──────────────────────────────────────────────────────────
 
 
-@router.get("/", response_model=list[VanRequestOut], response_model_by_alias=True)
+@router.get("/", response_model=list[VanRequestOut])
 async def list_van_requests(
     db: DBDep,
     _: RequireAnyDep,
@@ -94,31 +94,30 @@ async def list_van_requests(
     search: str | None = Query(None),
     ordering: str | None = Query(None),
 ):
-    q = select(VanRequest).where(VanRequest.is_deleted.is_(False))
+    q = select(VanRequest).where(VanRequest.isDeleted.is_(False))
 
     if status_filter:
-        q = q.where(VanRequest.status == status_filter)
+        q = q.where(VanRequest.approvalStatus == status_filter)
     if submitter_username:
-        q = q.where(VanRequest.submitter_username == submitter_username)
+        q = q.where(VanRequest.submitterUsername == submitter_username)
     if search:
-        q = q.where(VanRequest.mission_title.ilike(f"%{search}%"))
+        q = q.where(VanRequest.missionTitle.ilike(f"%{search}%"))
 
     q = q.order_by(*_build_order(ordering))
     result = await db.execute(q)
     return [VanRequestOut.model_validate(r) for r in result.scalars().all()]
 
 
-@router.get("/{request_id}/", response_model=VanRequestOut, response_model_by_alias=True)
+@router.get("/{request_id}/", response_model=VanRequestOut)
 async def get_van_request(request_id: int, db: DBDep, _: RequireAnyDep):
     return VanRequestOut.model_validate(await _get_or_404(request_id, db))
 
 
-@router.post("/", response_model=VanRequestOut, status_code=status.HTTP_201_CREATED,
-             response_model_by_alias=True)
+@router.post("/", response_model=VanRequestOut, status_code=status.HTTP_201_CREATED)
 async def create_van_request(body: VanRequestIn, db: DBDep, _: RequireAnyDep):
-    if body.request_id:
+    if body.requestId:
         existing = await db.execute(
-            select(VanRequest).where(VanRequest.request_id == body.request_id)
+            select(VanRequest).where(VanRequest.requestId == body.requestId)
         )
         existing = existing.scalar_one_or_none()
         if existing:
@@ -131,7 +130,7 @@ async def create_van_request(body: VanRequestIn, db: DBDep, _: RequireAnyDep):
     return VanRequestOut.model_validate(obj)
 
 
-@router.put("/{request_id}/", response_model=VanRequestOut, response_model_by_alias=True)
+@router.put("/{request_id}/", response_model=VanRequestOut)
 async def update_van_request(request_id: int, body: VanRequestIn, db: DBDep, _: RequireAnyDep):
     obj = await _get_or_404(request_id, db)
     for key, value in _extract_columns(body).items():
@@ -141,19 +140,19 @@ async def update_van_request(request_id: int, body: VanRequestIn, db: DBDep, _: 
     return VanRequestOut.model_validate(obj)
 
 
-@router.patch("/{request_id}/", response_model=VanRequestOut, response_model_by_alias=True)
+@router.patch("/{request_id}/", response_model=VanRequestOut)
 async def partial_update_van_request(
     request_id: int, body: VanRequestIn, db: DBDep, _: RequireAnyDep
 ):
     obj = await _get_or_404(request_id, db)
-    provided = body.model_dump(exclude_unset=True, by_alias=False)
+    provided = body.model_dump(exclude_unset=True)
     all_cols = _extract_columns(body)
     for key in provided:
         if key in all_cols:
             setattr(obj, key, all_cols[key])
-    if "form_data" in provided:
-        for col in ("mission_title", "mission_place", "pickup_date", "return_date",
-                    "fullname", "job_position", "requester_phone", "requester_gender"):
+    if "formData" in provided:
+        for col in ("missionTitle", "missionPlace", "pickupDate", "returnDate",
+                    "fullname", "jobPosition", "requesterPhone", "requesterGender"):
             setattr(obj, col, all_cols[col])
     await db.commit()
     await db.refresh(obj)
@@ -163,28 +162,28 @@ async def partial_update_van_request(
 @router.delete("/{request_id}/", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_van_request(request_id: int, db: DBDep, _: RequireAdminDep):
     obj = await _get_or_404(request_id, db)
-    obj.is_deleted = True
+    obj.isDeleted = True
     await db.commit()
 
 
-@router.post("/{request_id}/approve/", response_model=VanRequestOut, response_model_by_alias=True)
+@router.post("/{request_id}/approve/", response_model=VanRequestOut)
 async def approve_van_request(
     request_id: int, body: ApproveIn, db: DBDep, current_user: RequireAdminDep
 ):
     obj = await _get_or_404(request_id, db)
     if body.action == "approve":
-        obj.status = "approved"
-        obj.approved_by = current_user.id
-        obj.approved_at = datetime.now(timezone.utc)
+        obj.approvalStatus = "approved"
+        obj.approvedBy = current_user.id
+        obj.approvedAt = datetime.now(timezone.utc)
     elif body.action == "reject":
-        obj.status = "rejected"
-        obj.approved_by = current_user.id
-        obj.approved_at = datetime.now(timezone.utc)
+        obj.approvalStatus = "rejected"
+        obj.approvedBy = current_user.id
+        obj.approvedAt = datetime.now(timezone.utc)
     else:
-        obj.status = "pending"
-        obj.approved_by = None
-        obj.approved_at = None
-    obj.approval_note = body.note or ""
+        obj.approvalStatus = "pending"
+        obj.approvedBy = None
+        obj.approvedAt = None
+    obj.approvalNote = body.note or ""
     await db.commit()
     await db.refresh(obj)
     return VanRequestOut.model_validate(obj)
@@ -193,20 +192,19 @@ async def approve_van_request(
 # ── Stops sub-resource ────────────────────────────────────────────────────────
 
 
-@router.get("/{request_id}/stops/", response_model=list[StopOut], response_model_by_alias=True)
+@router.get("/{request_id}/stops/", response_model=list[StopOut])
 async def list_stops(request_id: int, db: DBDep, _: RequireAnyDep):
     await _get_or_404(request_id, db)
     result = await db.execute(
-        select(Stop).where(Stop.van_request_id == request_id).order_by(Stop.order)
+        select(Stop).where(Stop.vanRequestId == request_id).order_by(Stop.order)
     )
     return [StopOut.model_validate(s) for s in result.scalars().all()]
 
 
-@router.post("/{request_id}/stops/", response_model=StopOut, status_code=status.HTTP_201_CREATED,
-             response_model_by_alias=True)
+@router.post("/{request_id}/stops/", response_model=StopOut, status_code=status.HTTP_201_CREATED)
 async def add_stop(request_id: int, body: StopIn, db: DBDep, _: RequireAnyDep):
     await _get_or_404(request_id, db)
-    obj = Stop(van_request_id=request_id, **body.model_dump())
+    obj = Stop(vanRequestId=request_id, **body.model_dump())
     db.add(obj)
     await db.commit()
     await db.refresh(obj)
@@ -217,7 +215,7 @@ async def add_stop(request_id: int, body: StopIn, db: DBDep, _: RequireAnyDep):
 async def remove_stop(request_id: int, stop_id: int, db: DBDep, _: RequireAdminDep):
     await _get_or_404(request_id, db)
     result = await db.execute(
-        select(Stop).where(Stop.id == stop_id, Stop.van_request_id == request_id)
+        select(Stop).where(Stop.id == stop_id, Stop.vanRequestId == request_id)
     )
     stop = result.scalar_one_or_none()
     if not stop:
@@ -229,24 +227,23 @@ async def remove_stop(request_id: int, stop_id: int, db: DBDep, _: RequireAdminD
 # ── Participants sub-resource ─────────────────────────────────────────────────
 
 
-@router.get("/{request_id}/participants/", response_model=list[VanRequestParticipantOut],
-            response_model_by_alias=True)
+@router.get("/{request_id}/participants/", response_model=list[VanRequestParticipantOut])
 async def list_request_participants(request_id: int, db: DBDep, _: RequireAnyDep):
     await _get_or_404(request_id, db)
     result = await db.execute(
         select(VanRequestParticipant)
-        .where(VanRequestParticipant.van_request_id == request_id)
-        .order_by(VanRequestParticipant.order_index)
+        .where(VanRequestParticipant.vanRequestId == request_id)
+        .order_by(VanRequestParticipant.orderIndex)
     )
     entries = result.scalars().all()
     out = []
     for entry in entries:
-        p_result = await db.execute(select(Participant).where(Participant.id == entry.participant_id))
+        p_result = await db.execute(select(Participant).where(Participant.id == entry.participantId))
         participant = p_result.scalar_one_or_none()
         out.append(VanRequestParticipantOut(
             id=entry.id,
             participant=participant,
-            order_index=entry.order_index,
+            orderIndex=entry.orderIndex,
         ))
     return out
 
@@ -255,17 +252,16 @@ async def list_request_participants(request_id: int, db: DBDep, _: RequireAnyDep
     "/{request_id}/participants/",
     response_model=VanRequestParticipantOut,
     status_code=status.HTTP_201_CREATED,
-    response_model_by_alias=True,
 )
 async def add_request_participant(
     request_id: int, body: VanRequestParticipantIn, db: DBDep, _: RequireAnyDep
 ):
     await _get_or_404(request_id, db)
 
-    if not body.participant_id and not body.participant:
+    if not body.participantId and not body.participant:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Provide either participant_id or participant data.",
+            detail="Provide either participantId or participant data.",
         )
 
     if body.participant:
@@ -274,22 +270,22 @@ async def add_request_participant(
         await db.flush()
         participant_id = p.id
     else:
-        p_result = await db.execute(select(Participant).where(Participant.id == body.participant_id))
+        p_result = await db.execute(select(Participant).where(Participant.id == body.participantId))
         p = p_result.scalar_one_or_none()
         if not p:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Participant not found")
         participant_id = p.id
 
     entry = VanRequestParticipant(
-        van_request_id=request_id,
-        participant_id=participant_id,
-        order_index=body.order_index,
+        vanRequestId=request_id,
+        participantId=participant_id,
+        orderIndex=body.orderIndex,
     )
     db.add(entry)
     await db.commit()
     await db.refresh(entry)
     await db.refresh(p)
-    return VanRequestParticipantOut(id=entry.id, participant=p, order_index=entry.order_index)
+    return VanRequestParticipantOut(id=entry.id, participant=p, orderIndex=entry.orderIndex)
 
 
 @router.delete("/{request_id}/participants/{participant_id}/", status_code=status.HTTP_204_NO_CONTENT)
@@ -299,8 +295,8 @@ async def remove_request_participant(
     await _get_or_404(request_id, db)
     result = await db.execute(
         select(VanRequestParticipant).where(
-            VanRequestParticipant.van_request_id == request_id,
-            VanRequestParticipant.participant_id == participant_id,
+            VanRequestParticipant.vanRequestId == request_id,
+            VanRequestParticipant.participantId == participant_id,
         )
     )
     entry = result.scalar_one_or_none()

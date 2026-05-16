@@ -7,7 +7,7 @@ class UserCreate(BaseModel):
     username: str
     password: str
     role: str = "user"
-    unit_name: str = ""
+    unitName: str = ""
 
 
 class UserOut(BaseModel):
@@ -16,12 +16,12 @@ class UserOut(BaseModel):
     id: int
     username: str
     role: str
-    unit_name: str
-    created_at: datetime
+    unitName: str
+    createdAt: datetime
 
 
 class TokenOut(BaseModel):
     token: str
     role: str
-    unit_name: str
+    unitName: str
     username: str

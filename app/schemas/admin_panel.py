@@ -1,36 +1,34 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 class AdminPanelIn(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-
-    mission_code: str = Field(alias="missionCode")
-    mission_title: str = Field("", alias="missionTitle")
-    mission_place: str = Field("", alias="missionPlace")
-    mission_time: datetime | None = Field(None, alias="missionTime")
-    participant_count: str = Field("", alias="participantCount")
-    mission_via: str = Field("", alias="missionVia")
-    request_plan_file_name: str = Field("", alias="requestPlanFileName")
-    request_plan_file_key: str = Field("", alias="requestPlanFileKey")
-    request_plan_file_type: str = Field("", alias="requestPlanFileType")
-    is_active: bool = Field(True, alias="isActive")
+    missionCode: str
+    missionTitle: str = ""
+    missionPlace: str = ""
+    missionTime: datetime | None = None
+    participantCount: str = ""
+    missionVia: str = ""
+    requestPlanFileName: str = ""
+    requestPlanFileKey: str = ""
+    requestPlanFileType: str = ""
+    isActive: bool = True
 
 
 class AdminPanelOut(BaseModel):
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+    model_config = ConfigDict(from_attributes=True)
 
-    id: int = Field(alias="id")
-    mission_code: str = Field(alias="missionCode")
-    mission_title: str = Field(alias="missionTitle")
-    mission_place: str = Field(alias="missionPlace")
-    mission_time: datetime | None = Field(alias="missionTime")
-    participant_count: str = Field(alias="participantCount")
-    mission_via: str = Field(alias="missionVia")
-    request_plan_file_name: str = Field(alias="requestPlanFileName")
-    request_plan_file_key: str = Field(alias="requestPlanFileKey")
-    request_plan_file_type: str = Field(alias="requestPlanFileType")
-    is_active: bool = Field(alias="isActive")
-    saved_at: datetime = Field(alias="savedAt")
-    created_at: datetime = Field(alias="createdAt")
+    id: int
+    missionCode: str
+    missionTitle: str
+    missionPlace: str
+    missionTime: datetime | None
+    participantCount: str
+    missionVia: str
+    requestPlanFileName: str
+    requestPlanFileKey: str
+    requestPlanFileType: str
+    isActive: bool
+    savedAt: datetime
+    createdAt: datetime

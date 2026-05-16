@@ -20,25 +20,25 @@ async def obtain_token(body: LoginRequest, db: DBDep):
     result = await db.execute(select(User).where(User.username == body.username))
     user = result.scalar_one_or_none()
 
-    if not user or not verify_password(body.password, user.password_hash):
+    if not user or not verify_password(body.password, user.passwordHash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",
         )
 
-    if not user.is_active:
+    if not user.isActive:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Account is inactive",
         )
 
     token_value = create_token()
-    db.add(TokenStore(token=token_value, user_id=user.id))
+    db.add(TokenStore(token=token_value, userId=user.id))
     await db.commit()
 
     return TokenOut(
         token=token_value,
         role=user.role,
-        unit_name=user.unit_name,
+        unitName=user.unitName,
         username=user.username,
     )

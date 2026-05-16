@@ -17,12 +17,12 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     username: Mapped[str] = mapped_column(String(150), unique=True, nullable=False)
-    # maps to Django's 'password' column
-    password_hash: Mapped[str] = mapped_column("password", String(255), nullable=False)
+    # maps to Django's 'password' column — column name kept as-is
+    passwordHash: Mapped[str] = mapped_column("password", String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="user")
-    unit_name: Mapped[str] = mapped_column(String(255), nullable=False, server_default="")
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    created_at: Mapped[datetime] = mapped_column(
+    unitName: Mapped[str] = mapped_column(String(255), nullable=False, server_default="")
+    isActive: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    createdAt: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
@@ -35,10 +35,10 @@ class TokenStore(Base):
     __tablename__ = "api_token_store"
 
     token: Mapped[str] = mapped_column(String(64), primary_key=True)
-    user_id: Mapped[int] = mapped_column(
+    userId: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("api_users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    created_at: Mapped[datetime] = mapped_column(
+    createdAt: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 

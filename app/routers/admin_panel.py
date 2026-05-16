@@ -18,48 +18,47 @@ async def _get_or_404(panel_id: int, db) -> MissionAdminPanel:
     return obj
 
 
-@router.get("/", response_model=list[AdminPanelOut], response_model_by_alias=True)
+@router.get("/", response_model=list[AdminPanelOut])
 async def list_admin_panels(db: DBDep, _: RequireAdminDep):
-    result = await db.execute(select(MissionAdminPanel).order_by(MissionAdminPanel.created_at.desc()))
+    result = await db.execute(select(MissionAdminPanel).order_by(MissionAdminPanel.createdAt.desc()))
     return [AdminPanelOut.model_validate(r) for r in result.scalars().all()]
 
 
-@router.get("/{panel_id}/", response_model=AdminPanelOut, response_model_by_alias=True)
+@router.get("/{panel_id}/", response_model=AdminPanelOut)
 async def get_admin_panel(panel_id: int, db: DBDep, _: RequireAdminDep):
     return AdminPanelOut.model_validate(await _get_or_404(panel_id, db))
 
 
-@router.post("/", response_model=AdminPanelOut, status_code=status.HTTP_201_CREATED,
-             response_model_by_alias=True)
+@router.post("/", response_model=AdminPanelOut, status_code=status.HTTP_201_CREATED)
 async def create_admin_panel(body: AdminPanelIn, db: DBDep, _: RequireAdminDep):
     existing = await db.execute(
-        select(MissionAdminPanel).where(MissionAdminPanel.mission_code == body.mission_code)
+        select(MissionAdminPanel).where(MissionAdminPanel.missionCode == body.missionCode)
     )
     obj = existing.scalar_one_or_none()
     if obj:
         return AdminPanelOut.model_validate(obj)
 
-    obj = MissionAdminPanel(**body.model_dump(by_alias=False))
+    obj = MissionAdminPanel(**body.model_dump())
     db.add(obj)
     await db.commit()
     await db.refresh(obj)
     return AdminPanelOut.model_validate(obj)
 
 
-@router.put("/{panel_id}/", response_model=AdminPanelOut, response_model_by_alias=True)
+@router.put("/{panel_id}/", response_model=AdminPanelOut)
 async def update_admin_panel(panel_id: int, body: AdminPanelIn, db: DBDep, _: RequireAdminDep):
     obj = await _get_or_404(panel_id, db)
-    for key, value in body.model_dump(by_alias=False).items():
+    for key, value in body.model_dump().items():
         setattr(obj, key, value)
     await db.commit()
     await db.refresh(obj)
     return AdminPanelOut.model_validate(obj)
 
 
-@router.patch("/{panel_id}/", response_model=AdminPanelOut, response_model_by_alias=True)
+@router.patch("/{panel_id}/", response_model=AdminPanelOut)
 async def partial_update_admin_panel(panel_id: int, body: AdminPanelIn, db: DBDep, _: RequireAdminDep):
     obj = await _get_or_404(panel_id, db)
-    for key, value in body.model_dump(by_alias=False, exclude_unset=True).items():
+    for key, value in body.model_dump(exclude_unset=True).items():
         setattr(obj, key, value)
     await db.commit()
     await db.refresh(obj)

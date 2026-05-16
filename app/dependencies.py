@@ -29,7 +29,7 @@ async def get_current_user(
 
     result = await db.execute(
         select(User)
-        .join(TokenStore, TokenStore.user_id == User.id)
+        .join(TokenStore, TokenStore.userId == User.id)
         .where(TokenStore.token == token_value)
     )
     user = result.scalar_one_or_none()
@@ -41,7 +41,7 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Token"},
         )
 
-    if not user.is_active:
+    if not user.isActive:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Account is inactive",
