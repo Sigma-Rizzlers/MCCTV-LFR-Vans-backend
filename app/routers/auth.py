@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -32,6 +34,7 @@ async def obtain_token(body: LoginRequest, db: DBDep):
             detail="Account is inactive",
         )
 
+    user.lastLoginAt = datetime.now(timezone.utc)
     token_value = create_token()
     db.add(TokenStore(token=token_value, userId=user.id))
     await db.commit()

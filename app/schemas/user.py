@@ -1,13 +1,24 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
 
-class UserCreate(BaseModel):
+class UserCreateIn(BaseModel):
     username: str
     password: str
-    role: str = "user"
+    role: Literal["user", "admin", "superadmin", "sysmanager"]
     unitName: str = ""
+
+
+class UserUpdateIn(BaseModel):
+    role: Literal["user", "admin", "superadmin", "sysmanager"] | None = None
+    unitName: str | None = None
+    isActive: bool | None = None
+
+
+class ResetPasswordIn(BaseModel):
+    newPassword: str
 
 
 class UserOut(BaseModel):
@@ -17,7 +28,9 @@ class UserOut(BaseModel):
     username: str
     role: str
     unitName: str
+    isActive: bool
     createdAt: datetime
+    lastLoginAt: datetime | None
 
 
 class TokenOut(BaseModel):

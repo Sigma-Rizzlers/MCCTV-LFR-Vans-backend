@@ -25,6 +25,7 @@ class User(Base):
     createdAt: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    lastLoginAt: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     tokens: Mapped[list["TokenStore"]] = relationship(
         "TokenStore", back_populates="user", cascade="all, delete-orphan"
