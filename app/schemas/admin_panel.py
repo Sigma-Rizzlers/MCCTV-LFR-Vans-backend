@@ -13,6 +13,7 @@ class AdminPanelIn(BaseModel):
     requestPlanFileName: str = ""
     requestPlanFileKey: str = ""
     requestPlanFileType: str = ""
+    requestPlanFileDataUrl: str = ""
     isActive: bool = True
 
 
@@ -29,6 +30,7 @@ class AdminPanelOut(BaseModel):
     requestPlanFileName: str
     requestPlanFileKey: str
     requestPlanFileType: str
+    requestPlanFileDataUrl: str
     isActive: bool
     savedAt: datetime
     createdAt: datetime

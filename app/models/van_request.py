@@ -50,6 +50,10 @@ class VanRequest(Base):
     approvalNote: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     approvedAt: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # Edit tracking
+    lastEditedAt: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    editHistory: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list, server_default="'[]'")
+
     # Timestamps
     submittedAt: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     updatedAt: Mapped[datetime | None] = mapped_column(DateTime, onupdate=func.now(), nullable=True)

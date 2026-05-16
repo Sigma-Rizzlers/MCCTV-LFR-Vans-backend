@@ -20,6 +20,8 @@ class VanRequestIn(BaseModel):
     lunchImageName: str = ""
     dinnerImageName: str = ""
     implementationImageName: str = ""
+    lastEditedAt: datetime | None = None
+    editHistory: list[Any] = []
 
 
 class VanRequestOut(BaseModel):
@@ -43,6 +45,8 @@ class VanRequestOut(BaseModel):
     lunchImageName: str
     dinnerImageName: str
     implementationImageName: str
+    lastEditedAt: datetime | None
+    editHistory: list[Any]
 
 
 class ApproveIn(BaseModel):
