@@ -30,6 +30,11 @@ async def list_users(
     return result.scalars().all()
 
 
+@router.get("/me/", response_model=UserOut)
+async def get_me(current_user: CurrentUserDep):
+    return current_user
+
+
 @router.get("/{user_id}/", response_model=UserOut)
 async def get_user(user_id: int, db: DBDep, current_user: CurrentUserDep):
     if current_user.role not in {"superadmin", "sysmanager"} and current_user.id != user_id:
