@@ -39,11 +39,24 @@ alembic upgrade head --sql
 ## Starting the server
 
 ```bash
-uvicorn app.main:app --reload --port 8001
+python -m uvicorn app.main:app --reload --port 8001
 ```
 
 The Django backend runs on port 8000; FastAPI runs on port 8001 during
 parallel operation.
+
+## Windows
+
+On Windows, always invoke uvicorn via the Python module flag:
+
+```
+python -m uvicorn app.main:app --reload --port 8001
+```
+
+Do not use `.venv/Scripts/uvicorn` directly — on Windows the binary
+wrapper may fail to resolve packages installed in the venv, producing
+`ModuleNotFoundError` at startup even when the package is correctly
+installed.
 
 ## Frontend switchover
 

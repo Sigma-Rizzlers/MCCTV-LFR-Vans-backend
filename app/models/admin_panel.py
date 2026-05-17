@@ -13,7 +13,7 @@ class MissionAdminPanel(Base):
     missionCode: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
     missionTitle: Mapped[str] = mapped_column(String(255), nullable=False, server_default="")
     missionPlace: Mapped[str] = mapped_column(String(255), nullable=False, server_default="")
-    missionTime: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    missionTime: Mapped[str | None] = mapped_column(String(100), nullable=True)
     participantCount: Mapped[str] = mapped_column(String(50), nullable=False, server_default="")
     missionVia: Mapped[str] = mapped_column(String(255), nullable=False, server_default="")
     requestPlanFileName: Mapped[str] = mapped_column(String(255), nullable=False, server_default="")

@@ -7,7 +7,7 @@ class AdminPanelIn(BaseModel):
     missionCode: str
     missionTitle: str = ""
     missionPlace: str = ""
-    missionTime: datetime | None = None
+    missionTime: str | None = None
     participantCount: str = ""
     missionVia: str = ""
     requestPlanFileName: str = ""
@@ -24,7 +24,7 @@ class AdminPanelOut(BaseModel):
     missionCode: str
     missionTitle: str
     missionPlace: str
-    missionTime: datetime | None
+    missionTime: str | None
     participantCount: str
     missionVia: str
     requestPlanFileName: str
