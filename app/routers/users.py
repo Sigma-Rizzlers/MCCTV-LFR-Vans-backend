@@ -1,9 +1,13 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 
 from app.dependencies import CurrentUserDep, DBDep, RequireSuperadminDep
 from app.models.user import User
+from app.models.user_profile import UserProfile
 from app.schemas.user import ResetPasswordIn, UserCreateIn, UserOut, UserUpdateIn
+from app.schemas.user_profile import UserProfileIn, UserProfileOut
 from app.security import hash_password
 from app.utils.audit import log_action
 
@@ -115,3 +119,40 @@ async def delete_user(user_id: int, db: DBDep, current_user: RequireSuperadminDe
     user.isActive = False
     await log_action(db, current_user, "delete_user", target=user.username)
     await db.commit()
+
+
+@router.get("/me/profile/", response_model=UserProfileOut)
+async def get_my_profile(db: DBDep, current_user: CurrentUserDep):
+    result = await db.execute(select(UserProfile).where(UserProfile.userId == current_user.id))
+    profile = result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+    return profile
+
+
+@router.put("/me/profile/", response_model=UserProfileOut)
+async def upsert_my_profile(body: UserProfileIn, db: DBDep, current_user: CurrentUserDep):
+    result = await db.execute(select(UserProfile).where(UserProfile.userId == current_user.id))
+    profile = result.scalar_one_or_none()
+    now = datetime.now(timezone.utc)
+    if profile:
+        profile.name = body.name
+        profile.phone = body.phone
+        profile.gender = body.gender
+        profile.role = body.role
+        profile.supportFileName = body.supportFileName
+        profile.updatedAt = now
+    else:
+        profile = UserProfile(
+            userId=current_user.id,
+            name=body.name,
+            phone=body.phone,
+            gender=body.gender,
+            role=body.role,
+            supportFileName=body.supportFileName,
+            updatedAt=now,
+        )
+        db.add(profile)
+    await db.commit()
+    await db.refresh(profile)
+    return profile
