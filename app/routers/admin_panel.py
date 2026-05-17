@@ -1,4 +1,9 @@
-from fastapi import APIRouter, HTTPException, status
+import mimetypes
+from pathlib import Path
+
+import aiofiles
+from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 
 from app.dependencies import DBDep, RequireAdminDep
@@ -6,6 +11,8 @@ from app.models.admin_panel import MissionAdminPanel
 from app.schemas.admin_panel import AdminPanelIn, AdminPanelOut
 
 router = APIRouter(prefix="/v1/admin-panel", tags=["admin-panel"])
+
+_FILES_ROOT = Path(__file__).resolve().parent.parent.parent / "storage" / "files"
 
 
 async def _get_or_404(panel_id: int, db) -> MissionAdminPanel:
@@ -70,3 +77,60 @@ async def delete_admin_panel(panel_id: int, db: DBDep, _: RequireAdminDep):
     obj = await _get_or_404(panel_id, db)
     await db.delete(obj)
     await db.commit()
+
+
+# ── Mission plan file ─────────────────────────────────────────────────────────
+
+
+@router.post("/{panel_id}/files/plan/")
+async def upload_plan_file(
+    panel_id: int,
+    db: DBDep,
+    _: RequireAdminDep,
+    file: UploadFile = File(...),
+):
+    obj = await _get_or_404(panel_id, db)
+
+    plan_dir = _FILES_ROOT / "admin-panel" / obj.missionCode
+    plan_dir.mkdir(parents=True, exist_ok=True)
+    for old in plan_dir.iterdir():
+        old.unlink(missing_ok=True)
+
+    filename = file.filename or "file"
+    async with aiofiles.open(plan_dir / filename, "wb") as out:
+        await out.write(await file.read())
+
+    media_type, _ = mimetypes.guess_type(filename)
+    file_type = media_type or "application/octet-stream"
+    file_key = f"admin-panel/{obj.missionCode}/{filename}"
+
+    obj.requestPlanFileName = filename
+    obj.requestPlanFileKey = file_key
+    obj.requestPlanFileType = file_type
+    await db.commit()
+
+    return {
+        "fileName": filename,
+        "fileKey": file_key,
+        "fileType": file_type,
+        "url": f"/api/v1/admin-panel/{panel_id}/files/plan/",
+    }
+
+
+@router.get("/{panel_id}/files/plan/")
+async def download_plan_file(
+    panel_id: int,
+    db: DBDep,
+    _: RequireAdminDep,
+):
+    obj = await _get_or_404(panel_id, db)
+
+    if not obj.requestPlanFileName:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No plan file stored")
+
+    path = _FILES_ROOT / "admin-panel" / obj.missionCode / obj.requestPlanFileName
+    if not path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found on disk")
+
+    media_type = obj.requestPlanFileType or "application/octet-stream"
+    return FileResponse(str(path), media_type=media_type, filename=obj.requestPlanFileName)

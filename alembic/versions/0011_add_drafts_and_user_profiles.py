@@ -21,7 +21,7 @@ def upgrade() -> None:
         "api_report_drafts",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
         sa.Column("username", sa.String(150), nullable=False),
-        sa.Column("formData", sa.JSON(), nullable=False, server_default="'{}'"),
+        sa.Column("formData", sa.JSON(), nullable=False, server_default=sa.text("'{}'")),
         sa.Column(
             "savedAt",
             sa.DateTime(timezone=True),

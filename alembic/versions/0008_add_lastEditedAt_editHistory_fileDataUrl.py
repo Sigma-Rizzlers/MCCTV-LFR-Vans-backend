@@ -24,7 +24,7 @@ def upgrade() -> None:
     )
     op.add_column(
         "api_van_requests",
-        sa.Column("editHistory", sa.JSON(), nullable=False, server_default="'[]'"),
+        sa.Column("editHistory", sa.JSON(), nullable=False, server_default=sa.text("'[]'")),
     )
 
     # api_mission_admin_panels: base64 file data URL

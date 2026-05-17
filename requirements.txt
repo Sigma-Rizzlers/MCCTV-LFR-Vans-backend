@@ -8,5 +8,6 @@ python-dotenv
 passlib[bcrypt]
 python-jose[cryptography]
 python-multipart
+aiofiles
 pydantic[email]
 pydantic-settings

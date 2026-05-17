@@ -1,6 +1,10 @@
+import mimetypes
 from datetime import date, datetime, timezone
+from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query, status
+import aiofiles
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 
 from app.dependencies import DBDep, RequireAdminDep, RequireAnyDep
@@ -13,6 +17,18 @@ from app.schemas.van_request import ApproveIn, VanRequestIn, VanRequestOut
 from app.utils.audit import log_action
 
 router = APIRouter(prefix="/v1/van-requests", tags=["van-requests"])
+
+_FILES_ROOT = Path(__file__).resolve().parent.parent.parent / "storage" / "files"
+
+_SLOT_MAP = {
+    "support": "supportFileName",
+    "lodging": "lodgingImageName",
+    "breakfast": "breakfastImageName",
+    "lunch": "lunchImageName",
+    "dinner": "dinnerImageName",
+    "implementation": "implementationImageName",
+}
+_VALID_SLOTS = frozenset(_SLOT_MAP)
 
 # ── ordering helpers ──────────────────────────────────────────────────────────
 
@@ -175,11 +191,11 @@ async def approve_van_request(
     if body.action == "approve":
         obj.approvalStatus = "approved"
         obj.approvedBy = current_user.id
-        obj.approvedAt = datetime.now(timezone.utc)
+        obj.approvedAt = datetime.now(timezone.utc).replace(tzinfo=None)
     elif body.action == "reject":
         obj.approvalStatus = "rejected"
         obj.approvedBy = current_user.id
-        obj.approvedAt = datetime.now(timezone.utc)
+        obj.approvedAt = datetime.now(timezone.utc).replace(tzinfo=None)
     else:
         obj.approvalStatus = "pending"
         obj.approvedBy = None
@@ -306,3 +322,63 @@ async def remove_request_participant(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Participant not on this request")
     await db.delete(entry)
     await db.commit()
+
+
+# ── File attachments ──────────────────────────────────────────────────────────
+
+
+@router.post("/{request_id}/files/{slot}/")
+async def upload_request_file(
+    request_id: int,
+    slot: str,
+    db: DBDep,
+    _: RequireAnyDep,
+    file: UploadFile = File(...),
+):
+    if slot not in _VALID_SLOTS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid slot. Choose from: {', '.join(sorted(_VALID_SLOTS))}",
+        )
+    obj = await _get_or_404(request_id, db)
+
+    slot_dir = _FILES_ROOT / obj.requestId / slot
+    slot_dir.mkdir(parents=True, exist_ok=True)
+    for old in slot_dir.iterdir():
+        old.unlink(missing_ok=True)
+
+    filename = file.filename or "file"
+    async with aiofiles.open(slot_dir / filename, "wb") as out:
+        await out.write(await file.read())
+
+    setattr(obj, _SLOT_MAP[slot], filename)
+    await db.commit()
+
+    return {
+        "slot": slot,
+        "fileName": filename,
+        "url": f"/api/v1/van-requests/{request_id}/files/{slot}/",
+    }
+
+
+@router.get("/{request_id}/files/{slot}/")
+async def download_request_file(
+    request_id: int,
+    slot: str,
+    db: DBDep,
+    _: RequireAnyDep,
+):
+    if slot not in _VALID_SLOTS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid slot")
+    obj = await _get_or_404(request_id, db)
+
+    filename = getattr(obj, _SLOT_MAP[slot])
+    if not filename:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No file stored for this slot")
+
+    path = _FILES_ROOT / obj.requestId / slot / filename
+    if not path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found on disk")
+
+    media_type, _ = mimetypes.guess_type(str(path))
+    return FileResponse(str(path), media_type=media_type or "application/octet-stream", filename=filename)

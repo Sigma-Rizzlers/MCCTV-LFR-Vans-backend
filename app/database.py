@@ -1,9 +1,16 @@
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 
 from app.config import settings
 
-engine = create_async_engine(settings.DATABASE_URL, echo=False)
+# NullPool + statement_cache_size=0 — required for pgbouncer/Supavisor transaction mode
+engine = create_async_engine(
+    settings.DATABASE_URL,
+    echo=False,
+    poolclass=NullPool,
+    connect_args={"statement_cache_size": 0},
+)
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,

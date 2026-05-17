@@ -2,17 +2,22 @@ import logging
 import time
 import traceback
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
 from app.database import engine
 from app.routers import admin_panel, audit_log, auth, drafts, health, participants, users, van_requests
+
+_STORAGE_DIR = Path(__file__).resolve().parent.parent / "storage"
+_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 logger = logging.getLogger("app")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -130,3 +135,5 @@ app.include_router(admin_panel.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(drafts.router, prefix="/api")
 app.include_router(audit_log.router, prefix="/api")
+
+app.mount("/storage", StaticFiles(directory=str(_STORAGE_DIR)), name="storage")
