@@ -48,6 +48,7 @@ async def get_user(user_id: int, db: DBDep, current_user: CurrentUserDep):
 
 @router.post("/", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 async def create_user(body: UserCreateIn, db: DBDep, current_user: RequireSuperadminDep):
+    _validate_password(body.password)
     exists = await db.execute(select(User).where(User.username == body.username))
     if exists.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already exists")
@@ -64,35 +65,55 @@ async def create_user(body: UserCreateIn, db: DBDep, current_user: RequireSupera
     return user
 
 
-@router.put("/{user_id}/", response_model=UserOut)
-async def update_user(user_id: int, body: UserUpdateIn, db: DBDep, _: RequireSuperadminDep):
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+_VALID_ROLES = frozenset({"user", "admin", "superadmin", "sysmanager"})
+_MIN_PASSWORD_LENGTH = 8
+
+
+def _validate_password(password: str) -> None:
+    if len(password) < _MIN_PASSWORD_LENGTH:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Password must be at least {_MIN_PASSWORD_LENGTH} characters.",
+        )
+
+
+def _apply_user_update(user: User, body: UserUpdateIn, current_user) -> None:
+    """Apply update fields with role-escalation guard."""
     if body.role is not None:
+        if body.role not in _VALID_ROLES:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role.")
+        # Prevent promoting someone to a role equal to or above your own unless you are superadmin
+        if body.role in {"superadmin", "sysmanager"} and current_user.role != "superadmin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only superadmin can assign superadmin or sysmanager roles.",
+            )
         user.role = body.role
     if body.unitName is not None:
         user.unitName = body.unitName
     if body.isActive is not None:
         user.isActive = body.isActive
+
+
+@router.put("/{user_id}/", response_model=UserOut)
+async def update_user(user_id: int, body: UserUpdateIn, db: DBDep, current_user: RequireSuperadminDep):
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    _apply_user_update(user, body, current_user)
     await db.commit()
     await db.refresh(user)
     return user
 
 
 @router.patch("/{user_id}/", response_model=UserOut)
-async def patch_user(user_id: int, body: UserUpdateIn, db: DBDep, _: RequireSuperadminDep):
+async def patch_user(user_id: int, body: UserUpdateIn, db: DBDep, current_user: RequireSuperadminDep):
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    if body.role is not None:
-        user.role = body.role
-    if body.unitName is not None:
-        user.unitName = body.unitName
-    if body.isActive is not None:
-        user.isActive = body.isActive
+    _apply_user_update(user, body, current_user)
     await db.commit()
     await db.refresh(user)
     return user
@@ -100,10 +121,17 @@ async def patch_user(user_id: int, body: UserUpdateIn, db: DBDep, _: RequireSupe
 
 @router.post("/{user_id}/reset-password/")
 async def reset_password(user_id: int, body: ResetPasswordIn, db: DBDep, current_user: RequireSuperadminDep):
+    # Prevent resetting your own password through this admin endpoint
+    if current_user.id == user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Use the change-password endpoint to update your own password.",
+        )
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    _validate_password(body.newPassword)
     user.passwordHash = hash_password(body.newPassword)
     await log_action(db, current_user, "reset_password", target=user.username)
     await db.commit()

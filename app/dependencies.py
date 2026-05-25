@@ -1,9 +1,11 @@
+from datetime import datetime, timezone, timedelta
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.models.user import TokenStore, User
 
@@ -28,16 +30,30 @@ async def get_current_user(
     token_value = authorization[6:].strip()
 
     result = await db.execute(
-        select(User)
+        select(User, TokenStore)
         .join(TokenStore, TokenStore.userId == User.id)
         .where(TokenStore.token == token_value)
     )
-    user = result.scalar_one_or_none()
+    row = result.first()
 
-    if not user:
+    if not row:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required",
+            headers={"WWW-Authenticate": "Token"},
+        )
+
+    user, token_store = row
+
+    # --- Token expiry check ---
+    expire_minutes = settings.ACCESS_TOKEN_EXPIRE_MINUTES
+    token_age = datetime.now(timezone.utc) - token_store.createdAt.replace(tzinfo=timezone.utc)
+    if token_age > timedelta(minutes=expire_minutes):
+        await db.delete(token_store)
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired. Please log in again.",
             headers={"WWW-Authenticate": "Token"},
         )
 

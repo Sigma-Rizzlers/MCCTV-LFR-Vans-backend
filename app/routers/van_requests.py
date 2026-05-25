@@ -1,4 +1,5 @@
 import mimetypes
+import re
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -29,6 +30,37 @@ _SLOT_MAP = {
     "implementation": "implementationImageName",
 }
 _VALID_SLOTS = frozenset(_SLOT_MAP)
+
+# ── file upload security constants ────────────────────────────────────────────
+
+_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
+
+# Image slots only accept images; support slot also accepts PDFs/docs
+_SLOT_ALLOWED_MIME: dict[str, frozenset[str]] = {
+    "support": frozenset({
+        "image/jpeg", "image/png", "image/gif", "image/webp",
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }),
+    "lodging":        frozenset({"image/jpeg", "image/png", "image/gif", "image/webp"}),
+    "breakfast":      frozenset({"image/jpeg", "image/png", "image/gif", "image/webp"}),
+    "lunch":          frozenset({"image/jpeg", "image/png", "image/gif", "image/webp"}),
+    "dinner":         frozenset({"image/jpeg", "image/png", "image/gif", "image/webp"}),
+    "implementation": frozenset({"image/jpeg", "image/png", "image/gif", "image/webp"}),
+}
+
+_SAFE_FILENAME_RE = re.compile(r"[^\w.\-]")  # keep word chars, dots, hyphens
+
+
+def _sanitize_filename(name: str) -> str:
+    """Strip path separators and unsafe characters from an uploaded filename."""
+    # Take only the basename (prevents path traversal like ../../etc/passwd)
+    name = Path(name).name
+    # Replace anything that's not alphanumeric, dot, or hyphen with underscore
+    name = _SAFE_FILENAME_RE.sub("_", name)
+    # Truncate to a safe length
+    return name[:100] or "file"
 
 # ── ordering helpers ──────────────────────────────────────────────────────────
 
@@ -147,9 +179,22 @@ async def create_van_request(body: VanRequestIn, db: DBDep, _: RequireAnyDep):
     return VanRequestOut.model_validate(obj)
 
 
+def _assert_owner_or_admin(obj: VanRequest, current_user) -> None:
+    """Raise 403 if the user is not the submitter and not an admin/superadmin."""
+    from app.dependencies import _ADMIN_ROLES  # local import to avoid circular
+    if current_user.role in _ADMIN_ROLES:
+        return
+    if obj.submitterUsername != current_user.username:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only modify your own requests.",
+        )
+
+
 @router.put("/{request_id}/", response_model=VanRequestOut)
-async def update_van_request(request_id: int, body: VanRequestIn, db: DBDep, _: RequireAnyDep):
+async def update_van_request(request_id: int, body: VanRequestIn, db: DBDep, current_user: RequireAnyDep):
     obj = await _get_or_404(request_id, db)
+    _assert_owner_or_admin(obj, current_user)
     for key, value in _extract_columns(body).items():
         setattr(obj, key, value)
     await db.commit()
@@ -159,9 +204,10 @@ async def update_van_request(request_id: int, body: VanRequestIn, db: DBDep, _: 
 
 @router.patch("/{request_id}/", response_model=VanRequestOut)
 async def partial_update_van_request(
-    request_id: int, body: VanRequestIn, db: DBDep, _: RequireAnyDep
+    request_id: int, body: VanRequestIn, db: DBDep, current_user: RequireAnyDep
 ):
     obj = await _get_or_404(request_id, db)
+    _assert_owner_or_admin(obj, current_user)
     provided = body.model_dump(exclude_unset=True)
     all_cols = _extract_columns(body)
     for key in provided:
@@ -332,7 +378,7 @@ async def upload_request_file(
     request_id: int,
     slot: str,
     db: DBDep,
-    _: RequireAnyDep,
+    current_user: RequireAnyDep,
     file: UploadFile = File(...),
 ):
     if slot not in _VALID_SLOTS:
@@ -342,14 +388,40 @@ async def upload_request_file(
         )
     obj = await _get_or_404(request_id, db)
 
+    # Ownership check — only the submitter or an admin can upload files
+    _assert_owner_or_admin(obj, current_user)
+
+    # Read file content with size limit
+    content = await file.read(_MAX_FILE_SIZE_BYTES + 1)
+    if len(content) > _MAX_FILE_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File exceeds the {_MAX_FILE_SIZE_BYTES // (1024 * 1024)} MB limit.",
+        )
+
+    # Validate MIME type by reading the Content-Type the client declared
+    # and cross-checking against what we allow for this slot
+    declared_mime = (file.content_type or "").split(";")[0].strip().lower()
+    allowed_mimes = _SLOT_ALLOWED_MIME[slot]
+    if declared_mime not in allowed_mimes:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"File type '{declared_mime}' is not allowed for slot '{slot}'. "
+                   f"Allowed: {', '.join(sorted(allowed_mimes))}",
+        )
+
+    # Sanitize filename to prevent path traversal
+    filename = _sanitize_filename(file.filename or "file")
+
     slot_dir = _FILES_ROOT / obj.requestId / slot
     slot_dir.mkdir(parents=True, exist_ok=True)
+
+    # Remove previous file for this slot before saving the new one
     for old in slot_dir.iterdir():
         old.unlink(missing_ok=True)
 
-    filename = file.filename or "file"
     async with aiofiles.open(slot_dir / filename, "wb") as out:
-        await out.write(await file.read())
+        await out.write(content)
 
     setattr(obj, _SLOT_MAP[slot], filename)
     await db.commit()

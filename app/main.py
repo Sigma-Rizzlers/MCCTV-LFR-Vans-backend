@@ -8,7 +8,6 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -43,11 +42,14 @@ app = FastAPI(title="MCCTV LFR Vans API", lifespan=lifespan, docs_url="/api/docs
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
 
-_origins = list({
-    settings.FRONTEND_URL,
-    "http://localhost:5173",
-    "http://localhost:3000",
-})
+import os as _os
+
+_is_dev = _os.getenv("ENVIRONMENT", "production").lower() == "development"
+
+_origins = [settings.FRONTEND_URL]
+if _is_dev:
+    # Only allow localhost origins in local development
+    _origins += ["http://localhost:5173", "http://localhost:3000"]
 
 app.add_middleware(
     CORSMiddleware,
@@ -136,4 +138,7 @@ app.include_router(users.router, prefix="/api")
 app.include_router(drafts.router, prefix="/api")
 app.include_router(audit_log.router, prefix="/api")
 
-app.mount("/storage", StaticFiles(directory=str(_STORAGE_DIR)), name="storage")
+# /storage is intentionally NOT mounted as a public static directory.
+# All file access goes through the authenticated API endpoints:
+#   GET /api/v1/van-requests/{id}/files/{slot}/
+#   GET /api/v1/admin-panel/{id}/files/plan/
