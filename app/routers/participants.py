@@ -7,6 +7,8 @@ from app.schemas.participant import ParticipantIn, ParticipantOut
 
 router = APIRouter(prefix="/v1/participants", tags=["participants"])
 
+_LIST_MAX = 500  # hard cap on list results
+
 
 async def _get_or_404(participant_id: int, db) -> Participant:
     result = await db.execute(
@@ -21,14 +23,14 @@ async def _get_or_404(participant_id: int, db) -> Participant:
     return obj
 
 
-# list, retrieve, create are public — no auth required (autocomplete + form submission)
-
 @router.get("/", response_model=list[ParticipantOut])
 async def list_participants(
     db: DBDep,
     _: RequireAnyDep,
     search: str | None = Query(None),
     ordering: str | None = Query(None),
+    limit: int = Query(default=_LIST_MAX, ge=1, le=_LIST_MAX),
+    offset: int = Query(default=0, ge=0),
 ):
     q = select(Participant).where(Participant.isDeleted.is_(False))
 
@@ -48,7 +50,7 @@ async def list_participants(
         "createdAt": Participant.createdAt,
     }
     col = col_map.get(col_name, Participant.name)
-    q = q.order_by(col.desc() if desc else col.asc())
+    q = q.order_by(col.desc() if desc else col.asc()).limit(limit).offset(offset)
 
     result = await db.execute(q)
     return [ParticipantOut.model_validate(r) for r in result.scalars().all()]
@@ -60,7 +62,7 @@ async def get_participant(participant_id: int, db: DBDep, _: RequireAnyDep):
 
 
 @router.post("/", response_model=ParticipantOut, status_code=status.HTTP_201_CREATED)
-async def create_participant(body: ParticipantIn, db: DBDep):
+async def create_participant(body: ParticipantIn, db: DBDep, _: RequireAnyDep):
     obj = Participant(**body.model_dump())
     db.add(obj)
     await db.commit()

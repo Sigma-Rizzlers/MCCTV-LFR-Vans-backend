@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 
 import aiofiles
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 
@@ -12,6 +12,8 @@ from app.models.admin_panel import MissionAdminPanel
 from app.schemas.admin_panel import AdminPanelIn, AdminPanelOut
 
 router = APIRouter(prefix="/v1/admin-panel", tags=["admin-panel"])
+
+_LIST_MAX = 500  # hard cap on list results
 
 _FILES_ROOT = Path(__file__).resolve().parent.parent.parent / "storage" / "files"
 
@@ -38,8 +40,18 @@ async def _get_or_404(panel_id: int, db) -> MissionAdminPanel:
 
 
 @router.get("/", response_model=list[AdminPanelOut])
-async def list_admin_panels(db: DBDep, _: RequireAdminDep):
-    result = await db.execute(select(MissionAdminPanel).order_by(MissionAdminPanel.createdAt.desc()))
+async def list_admin_panels(
+    db: DBDep,
+    _: RequireAdminDep,
+    limit: int = Query(default=_LIST_MAX, ge=1, le=_LIST_MAX),
+    offset: int = Query(default=0, ge=0),
+):
+    result = await db.execute(
+        select(MissionAdminPanel)
+        .order_by(MissionAdminPanel.createdAt.desc())
+        .limit(limit)
+        .offset(offset)
+    )
     return [AdminPanelOut.model_validate(r) for r in result.scalars().all()]
 
 

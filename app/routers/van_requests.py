@@ -52,6 +52,8 @@ _SLOT_ALLOWED_MIME: dict[str, frozenset[str]] = {
 
 _SAFE_FILENAME_RE = re.compile(r"[^\w.\-]")  # keep word chars, dots, hyphens
 
+_LIST_MAX = 500  # hard cap on list results
+
 
 def _sanitize_filename(name: str) -> str:
     """Strip path separators and unsafe characters from an uploaded filename."""
@@ -61,6 +63,23 @@ def _sanitize_filename(name: str) -> str:
     name = _SAFE_FILENAME_RE.sub("_", name)
     # Truncate to a safe length
     return name[:100] or "file"
+
+
+def _safe_request_dir(request_id_str: str, *sub: str) -> Path:
+    """Build a storage path under _FILES_ROOT, guarding against path traversal.
+
+    requestId comes from the DB but was originally client-supplied, so we
+    re-sanitize before using it in the filesystem.
+    """
+    safe_id = _SAFE_FILENAME_RE.sub("_", Path(request_id_str).name)[:100] or "unknown"
+    path = _FILES_ROOT.joinpath(safe_id, *sub)
+    # Ensure the resolved path stays within _FILES_ROOT
+    if not path.resolve().is_relative_to(_FILES_ROOT.resolve()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid request identifier",
+        )
+    return path
 
 # ── ordering helpers ──────────────────────────────────────────────────────────
 
@@ -142,6 +161,8 @@ async def list_van_requests(
     submitter_username: str | None = Query(None),
     search: str | None = Query(None),
     ordering: str | None = Query(None),
+    limit: int = Query(default=_LIST_MAX, ge=1, le=_LIST_MAX),
+    offset: int = Query(default=0, ge=0),
 ):
     from app.dependencies import _ADMIN_ROLES
     q = select(VanRequest).where(VanRequest.isDeleted.is_(False))
@@ -158,7 +179,7 @@ async def list_van_requests(
     if search:
         q = q.where(VanRequest.missionTitle.ilike(f"%{search}%"))
 
-    q = q.order_by(*_build_order(ordering))
+    q = q.order_by(*_build_order(ordering)).limit(limit).offset(offset)
     result = await db.execute(q)
     return [VanRequestOut.model_validate(r) for r in result.scalars().all()]
 
@@ -280,13 +301,14 @@ async def list_stops(request_id: int, db: DBDep, _: RequireAnyDep):
 
 
 @router.post("/{request_id}/stops/", response_model=StopOut, status_code=status.HTTP_201_CREATED)
-async def add_stop(request_id: int, body: StopIn, db: DBDep, _: RequireAnyDep):
-    await _get_or_404(request_id, db)
-    obj = Stop(vanRequestId=request_id, **body.model_dump())
-    db.add(obj)
+async def add_stop(request_id: int, body: StopIn, db: DBDep, current_user: RequireAnyDep):
+    obj = await _get_or_404(request_id, db)
+    _assert_owner_or_admin(obj, current_user)
+    stop = Stop(vanRequestId=request_id, **body.model_dump())
+    db.add(stop)
     await db.commit()
-    await db.refresh(obj)
-    return StopOut.model_validate(obj)
+    await db.refresh(stop)
+    return StopOut.model_validate(stop)
 
 
 @router.delete("/{request_id}/stops/{stop_id}/", status_code=status.HTTP_204_NO_CONTENT)
@@ -332,9 +354,10 @@ async def list_request_participants(request_id: int, db: DBDep, _: RequireAnyDep
     status_code=status.HTTP_201_CREATED,
 )
 async def add_request_participant(
-    request_id: int, body: VanRequestParticipantIn, db: DBDep, _: RequireAnyDep
+    request_id: int, body: VanRequestParticipantIn, db: DBDep, current_user: RequireAnyDep
 ):
-    await _get_or_404(request_id, db)
+    obj = await _get_or_404(request_id, db)
+    _assert_owner_or_admin(obj, current_user)
 
     if not body.participantId and not body.participant:
         raise HTTPException(
@@ -427,7 +450,7 @@ async def upload_request_file(
     # Sanitize filename to prevent path traversal
     filename = _sanitize_filename(file.filename or "file")
 
-    slot_dir = _FILES_ROOT / obj.requestId / slot
+    slot_dir = _safe_request_dir(obj.requestId, slot)
     slot_dir.mkdir(parents=True, exist_ok=True)
 
     # Remove previous file for this slot before saving the new one
@@ -462,7 +485,7 @@ async def download_request_file(
     if not filename:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No file stored for this slot")
 
-    path = _FILES_ROOT / obj.requestId / slot / filename
+    path = _safe_request_dir(obj.requestId, slot, filename)
     if not path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found on disk")
 
