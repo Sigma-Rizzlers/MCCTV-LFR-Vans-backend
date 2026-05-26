@@ -137,18 +137,24 @@ async def _get_or_404(request_id: int, db) -> VanRequest:
 @router.get("/", response_model=list[VanRequestOut])
 async def list_van_requests(
     db: DBDep,
-    _: RequireAnyDep,
+    current_user: RequireAnyDep,
     status_filter: str | None = Query(None, alias="status"),
     submitter_username: str | None = Query(None),
     search: str | None = Query(None),
     ordering: str | None = Query(None),
 ):
+    from app.dependencies import _ADMIN_ROLES
     q = select(VanRequest).where(VanRequest.isDeleted.is_(False))
+
+    # Non-admin users can only see their own requests
+    if current_user.role not in _ADMIN_ROLES:
+        q = q.where(VanRequest.submitterUsername == current_user.username)
+    elif submitter_username:
+        # Admins can filter by submitter
+        q = q.where(VanRequest.submitterUsername == submitter_username)
 
     if status_filter:
         q = q.where(VanRequest.approvalStatus == status_filter)
-    if submitter_username:
-        q = q.where(VanRequest.submitterUsername == submitter_username)
     if search:
         q = q.where(VanRequest.missionTitle.ilike(f"%{search}%"))
 
@@ -158,12 +164,17 @@ async def list_van_requests(
 
 
 @router.get("/{request_id}/", response_model=VanRequestOut)
-async def get_van_request(request_id: int, db: DBDep, _: RequireAnyDep):
-    return VanRequestOut.model_validate(await _get_or_404(request_id, db))
+async def get_van_request(request_id: int, db: DBDep, current_user: RequireAnyDep):
+    from app.dependencies import _ADMIN_ROLES
+    obj = await _get_or_404(request_id, db)
+    # Non-admin users can only read their own requests
+    if current_user.role not in _ADMIN_ROLES and obj.submitterUsername != current_user.username:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
+    return VanRequestOut.model_validate(obj)
 
 
 @router.post("/", response_model=VanRequestOut, status_code=status.HTTP_201_CREATED)
-async def create_van_request(body: VanRequestIn, db: DBDep, _: RequireAnyDep):
+async def create_van_request(body: VanRequestIn, db: DBDep, current_user: RequireAnyDep):
     if body.requestId:
         existing = await db.execute(
             select(VanRequest).where(VanRequest.requestId == body.requestId)
@@ -172,7 +183,10 @@ async def create_van_request(body: VanRequestIn, db: DBDep, _: RequireAnyDep):
         if existing:
             return VanRequestOut.model_validate(existing)
 
-    obj = VanRequest(**_extract_columns(body))
+    cols = _extract_columns(body)
+    # Always use the authenticated user's username — ignore client-supplied value
+    cols["submitterUsername"] = current_user.username
+    obj = VanRequest(**cols)
     db.add(obj)
     await db.commit()
     await db.refresh(obj)

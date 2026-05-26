@@ -1,4 +1,5 @@
 import mimetypes
+import re
 from pathlib import Path
 
 import aiofiles
@@ -13,6 +14,17 @@ from app.schemas.admin_panel import AdminPanelIn, AdminPanelOut
 router = APIRouter(prefix="/v1/admin-panel", tags=["admin-panel"])
 
 _FILES_ROOT = Path(__file__).resolve().parent.parent.parent / "storage" / "files"
+
+_PLAN_MAX_BYTES = 20 * 1024 * 1024  # 20 MB
+_PLAN_ALLOWED_MIME = frozenset({
+    "image/jpeg", "image/png", "image/gif", "image/webp",
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+})
+_SAFE_FILENAME_RE = re.compile(r"[^\w.\-]")
 
 
 async def _get_or_404(panel_id: int, db) -> MissionAdminPanel:
@@ -91,17 +103,37 @@ async def upload_plan_file(
 ):
     obj = await _get_or_404(panel_id, db)
 
+    # ── size limit ────────────────────────────────────────────────────
+    content = await file.read(_PLAN_MAX_BYTES + 1)
+    if len(content) > _PLAN_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File exceeds the {_PLAN_MAX_BYTES // (1024 * 1024)} MB limit.",
+        )
+
+    # ── MIME type check ───────────────────────────────────────────────
+    declared_mime = (file.content_type or "").split(";")[0].strip().lower()
+    if declared_mime not in _PLAN_ALLOWED_MIME:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=f"File type '{declared_mime}' is not allowed. "
+                   f"Allowed: {', '.join(sorted(_PLAN_ALLOWED_MIME))}",
+        )
+
+    # ── filename sanitization ─────────────────────────────────────────
+    raw_name = Path(file.filename or "file").name
+    filename = _SAFE_FILENAME_RE.sub("_", raw_name)[:100] or "file"
+
     plan_dir = _FILES_ROOT / "admin-panel" / obj.missionCode
     plan_dir.mkdir(parents=True, exist_ok=True)
     for old in plan_dir.iterdir():
         old.unlink(missing_ok=True)
 
-    filename = file.filename or "file"
     async with aiofiles.open(plan_dir / filename, "wb") as out:
-        await out.write(await file.read())
+        await out.write(content)
 
     media_type, _ = mimetypes.guess_type(filename)
-    file_type = media_type or "application/octet-stream"
+    file_type = media_type or declared_mime or "application/octet-stream"
     file_key = f"admin-panel/{obj.missionCode}/{filename}"
 
     obj.requestPlanFileName = filename

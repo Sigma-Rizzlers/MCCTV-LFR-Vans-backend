@@ -10,7 +10,11 @@ from sqlalchemy import select, delete
 from app.dependencies import DBDep
 from app.models.user import TokenStore, User
 from app.schemas.user import TokenOut
-from app.security import create_token, verify_password
+from app.security import create_token, hash_password, verify_password
+
+# Dummy hash used to ensure constant-time response when a username does not
+# exist — prevents user enumeration through response-time differences.
+_DUMMY_HASH = hash_password("dummy-constant-time-password-mcctv")
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -68,7 +72,11 @@ async def obtain_token(body: LoginRequest, request: Request, db: DBDep):
     result = await db.execute(select(User).where(User.username == body.username))
     user = result.scalar_one_or_none()
 
-    if not user or not verify_password(body.password, user.passwordHash):
+    # Always run bcrypt regardless of whether the user exists.
+    # This prevents username enumeration via response-time differences.
+    password_ok = verify_password(body.password, user.passwordHash if user else _DUMMY_HASH)
+
+    if not user or not password_ok:
         _record_failed(client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
