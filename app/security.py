@@ -1,3 +1,4 @@
+import hashlib
 import secrets
 
 from passlib.context import CryptContext
@@ -16,3 +17,12 @@ def hash_password(plain: str) -> str:
 def create_token() -> str:
     """Return a 64-char hex token (32 random bytes) for Authorization: Token header."""
     return secrets.token_hex(32)
+
+
+def hash_token(token: str) -> str:
+    """Return the SHA-256 hex digest of a raw token for safe DB storage.
+
+    Only the hash is persisted — the raw token is sent to the client once
+    and never stored.  A read-compromised DB cannot replay active sessions.
+    """
+    return hashlib.sha256(token.encode()).hexdigest()

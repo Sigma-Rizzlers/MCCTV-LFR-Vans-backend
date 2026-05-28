@@ -10,6 +10,7 @@ from sqlalchemy import select
 from app.dependencies import DBDep, RequireAdminDep
 from app.models.admin_panel import MissionAdminPanel
 from app.schemas.admin_panel import AdminPanelIn, AdminPanelOut
+from app.utils.file_validation import assert_magic_bytes
 
 router = APIRouter(prefix="/v1/admin-panel", tags=["admin-panel"])
 
@@ -131,6 +132,10 @@ async def upload_plan_file(
             detail=f"File type '{declared_mime}' is not allowed. "
                    f"Allowed: {', '.join(sorted(_PLAN_ALLOWED_MIME))}",
         )
+
+    # ── magic bytes check ─────────────────────────────────────────────
+    # Verifies actual file content matches the declared MIME type.
+    assert_magic_bytes(content, declared_mime)
 
     # ── filename sanitization ─────────────────────────────────────────
     raw_name = Path(file.filename or "file").name

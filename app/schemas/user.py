@@ -21,6 +21,11 @@ class ResetPasswordIn(BaseModel):
     newPassword: str
 
 
+class ChangePasswordIn(BaseModel):
+    currentPassword: str
+    newPassword: str
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

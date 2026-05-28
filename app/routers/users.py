@@ -6,12 +6,15 @@ from sqlalchemy import select
 from app.dependencies import CurrentUserDep, DBDep, RequireSuperadminDep
 from app.models.user import User
 from app.models.user_profile import UserProfile
-from app.schemas.user import ResetPasswordIn, UserCreateIn, UserOut, UserUpdateIn
+from app.schemas.user import ChangePasswordIn, ResetPasswordIn, UserCreateIn, UserOut, UserUpdateIn
 from app.schemas.user_profile import UserProfileIn, UserProfileOut
-from app.security import hash_password
+from app.security import hash_password, verify_password
 from app.utils.audit import log_action
 
 router = APIRouter(prefix="/v1/users", tags=["users"])
+
+
+_LIST_MAX = 500
 
 
 @router.get("/", response_model=list[UserOut])
@@ -20,12 +23,15 @@ async def list_users(
     _: RequireSuperadminDep,
     active: bool | None = Query(None),
     search: str | None = Query(None),
+    limit: int = Query(default=_LIST_MAX, ge=1, le=_LIST_MAX),
+    offset: int = Query(default=0, ge=0),
 ):
     q = select(User)
     if active is True:
         q = q.where(User.isActive.is_(True))
     if search:
         q = q.where(User.username.ilike(f"%{search}%"))
+    q = q.limit(limit).offset(offset)
     result = await db.execute(q)
     return result.scalars().all()
 
@@ -33,6 +39,25 @@ async def list_users(
 @router.get("/me/", response_model=UserOut)
 async def get_me(current_user: CurrentUserDep):
     return current_user
+
+
+@router.post("/me/change-password/")
+async def change_my_password(body: ChangePasswordIn, db: DBDep, current_user: CurrentUserDep):
+    if not verify_password(body.currentPassword, current_user.passwordHash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect.",
+        )
+    _validate_password(body.newPassword)
+    if body.currentPassword == body.newPassword:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different from the current password.",
+        )
+    current_user.passwordHash = hash_password(body.newPassword)
+    await log_action(db, current_user, "change_password", target=current_user.username)
+    await db.commit()
+    return {"detail": "Password updated successfully."}
 
 
 @router.get("/{user_id}/", response_model=UserOut)

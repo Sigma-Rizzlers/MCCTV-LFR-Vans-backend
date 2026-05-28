@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.models.user import TokenStore, User
+from app.security import hash_token
 
 DBDep = Annotated[AsyncSession, Depends(get_db)]
 
@@ -28,11 +29,12 @@ async def get_current_user(
         )
 
     token_value = authorization[6:].strip()
+    token_hash = hash_token(token_value)
 
     result = await db.execute(
         select(User, TokenStore)
         .join(TokenStore, TokenStore.userId == User.id)
-        .where(TokenStore.token == token_value)
+        .where(TokenStore.token == token_hash)
     )
     row = result.first()
 

@@ -10,7 +10,7 @@ from sqlalchemy import select, delete
 from app.dependencies import DBDep
 from app.models.user import TokenStore, User
 from app.schemas.user import TokenOut
-from app.security import create_token, hash_password, verify_password
+from app.security import create_token, hash_password, hash_token, verify_password
 
 # Dummy hash used to ensure constant-time response when a username does not
 # exist — prevents user enumeration through response-time differences.
@@ -98,7 +98,7 @@ async def obtain_token(body: LoginRequest, request: Request, db: DBDep):
 
     user.lastLoginAt = datetime.now(timezone.utc)
     token_value = create_token()
-    db.add(TokenStore(token=token_value, userId=user.id))
+    db.add(TokenStore(token=hash_token(token_value), userId=user.id))
     await db.commit()
 
     return TokenOut(

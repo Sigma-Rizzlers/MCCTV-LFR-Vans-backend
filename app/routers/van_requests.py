@@ -16,6 +16,7 @@ from app.schemas.participant import VanRequestParticipantIn, VanRequestParticipa
 from app.schemas.stop import StopIn, StopOut
 from app.schemas.van_request import ApproveIn, VanRequestIn, VanRequestOut
 from app.utils.audit import log_action
+from app.utils.file_validation import assert_magic_bytes
 
 router = APIRouter(prefix="/v1/van-requests", tags=["van-requests"])
 
@@ -446,6 +447,10 @@ async def upload_request_file(
             detail=f"File type '{declared_mime}' is not allowed for slot '{slot}'. "
                    f"Allowed: {', '.join(sorted(allowed_mimes))}",
         )
+
+    # Verify actual file magic bytes match the declared MIME type.
+    # Prevents uploading executables or scripts with a spoofed Content-Type.
+    assert_magic_bytes(content, declared_mime)
 
     # Sanitize filename to prevent path traversal
     filename = _sanitize_filename(file.filename or "file")
